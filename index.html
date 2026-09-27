@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lá na Calçada — Gestão & Impressão</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+        --primary: #D4522A; --bg: #FFF8F0; --card: #ffffff;
+        --border: #E8D5BE; --success: #25D366; --radius: 12px;
+    }
+    body { font-family: sans-serif; background: var(--bg); color: #1a1a1a; max-width: 500px; margin: 0 auto; padding-bottom: 50px; }
+    
+    .header { background: var(--primary); color: white; padding: 20px; text-align: center; border-bottom-left-radius: 20px; border-bottom-right-radius: 20px; }
+    
+    /* Cardápio */
+    .item-card { background: white; margin: 8px 16px; padding: 15px; border-radius: var(--radius); border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .price { font-weight: bold; color: var(--primary); }
+    .btn-add { background: var(--primary); color: white; border: none; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; font-size: 20px; }
+    
+    /* Painel ADM */
+    .admin-area { background: #2c2c2c; color: white; padding: 20px; margin-top: 50px; border-radius: 20px 20px 0 0; }
+    .admin-area h3 { color: #ff9800; margin-bottom: 15px; border-bottom: 1px solid #444; }
+    .input-adm { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #ddd; }
+    .btn-adm { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 10px; }
+    .btn-save { background: #ff9800; color: white; }
+    .list-adm-item { display: flex; justify-content: space-between; background: #3d3d3d; padding: 10px; margin-bottom: 5px; border-radius: 5px; }
+
+    /* Modal Adicionais */
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+    .modal { background: white; padding: 20px; border-radius: 15px; width: 100%; max-width: 400px; }
+
+    .btn-finalizar { width: 90%; display: block; margin: 20px auto; padding: 18px; background: var(--success); color: white; border: none; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; }
+
+    /* Área de Impressão */
+    @media print {
+        body * { visibility: hidden; }
+        #print-content, #print-content * { visibility: visible; }
+        #print-content { position: absolute; left: 0; top: 0; width: 100%; color: black; }
+    }
+    #print-content { display: none; padding: 20px; font-family: 'Courier New', Courier, monospace; }
+</style>
+</head>
+<body>
+
+<div id="print-content"></div>
+
+<div class="header">
+    <h1>Lá na Calçada</h1>
+    <p>Peça e Imprima seu Pedido</p>
+</div>
+
+<div id="cardapio-cliente"></div>
+
+<div style="padding: 20px;">
+    <h3>Dados de Entrega</h3>
+    <input type="text" id="cli-nome" class="input-adm" placeholder="Seu Nome">
+    <input type="text" id="cli-end" class="input-adm" placeholder="Endereço Completo">
+    <select id="cli-bairro" class="input-adm"></select>
+    <select id="cli-pgto" class="input-adm">
+        <option>Pix</option>
+        <option>Cartão</option>
+        <option>Dinheiro</option>
+    </select>
+    <button class="btn-finalizar" onclick="enviarEImprimir()">🚀 ENVIAR E ABRIR IMPRESSÃO</button>
+</div>
+
+<div class="admin-area">
+    <h3>⚙️ CADASTRAR PRODUTO</h3>
+    <input type="text" id="adm-p-nome" class="input-adm" placeholder="Nome do Produto">
+    <input type="number" id="adm-p-preco" class="input-adm" placeholder="Preço">
+    <label><input type="checkbox" id="adm-p-adc"> Tem adicionais?</label>
+    <button class="btn-adm btn-save" onclick="cadastrarProduto()">SALVAR NO CARDÁPIO</button>
+    <div id="adm-lista-p"></div>
+
+    <h3 style="margin-top:20px">🚚 CADASTRAR BAIRRO</h3>
+    <input type="text" id="adm-b-nome" class="input-adm" placeholder="Nome do Bairro">
+    <input type="number" id="adm-b-taxa" class="input-adm" placeholder="Taxa R$">
+    <button class="btn-adm btn-save" onclick="cadastrarBairro()">SALVAR BAIRRO</button>
+    <div id="adm-lista-b"></div>
+</div>
+
+<div id="modal-adc" class="overlay">
+    <div class="modal">
+        <h3 id="modal-p-nome">Adicionais</h3>
+        <div id="opcoes-adc">
+            <label><input type="checkbox" value="Ovo (+R$2,00)" data-preco="2"> Ovo (+R$2,00)</label><br>
+            <label><input type="checkbox" value="Bacon (+R$3,00)" data-preco="3"> Bacon (+R$3,00)</label><br>
+            <label><input type="checkbox" value="Batata Palha (+R$2,00)" data-preco="2"> Batata Palha (+R$2,00)</label>
+        </div>
+        <button class="btn-adm btn-save" style="margin-top:15px" onclick="confirmarAdicional()">OK</button>
+        <button class="btn-adm" onclick="fecharModal()">CANCELAR</button>
+    </div>
+</div>
+
+<script>
+const WHATSAPP = "5585987506226";
+
+let produtos = JSON.parse(localStorage.getItem('calca_p')) || [];
+let bairros = JSON.parse(localStorage.getItem('calca_b')) || [];
+let carrinho = [];
+let itemAtual = null;
+
+function cadastrarProduto() {
+    const nome = document.getElementById('adm-p-nome').value;
+    const preco = parseFloat(document.getElementById('adm-p-preco').value);
+    const temAdc = document.getElementById('adm-p-adc').checked;
+    if(nome && preco) {
+        produtos.push({nome, preco, ativo: true, temAdc});
+        atualizar();
+    }
+}
+
+function cadastrarBairro() {
+    const nome = document.getElementById('adm-b-nome').value;
+    const taxa = parseFloat(document.getElementById('adm-b-taxa').value);
+    if(nome && !isNaN(taxa)) {
+        bairros.push({nome, taxa});
+        atualizar();
+    }
+}
+
+function atualizar() {
+    localStorage.setItem('calca_p', JSON.stringify(produtos));
+    localStorage.setItem('calca_b', JSON.stringify(bairros));
+    render();
+}
+
+function render() {
+    const cardapio = document.getElementById('cardapio-cliente');
+    const listaP = document.getElementById('adm-lista-p');
+    const listaB = document.getElementById('adm-lista-b');
+    const selectB = document.getElementById('cli-bairro');
+
+    cardapio.innerHTML = ""; listaP.innerHTML = ""; listaB.innerHTML = ""; selectB.innerHTML = "";
+
+    produtos.forEach((p, i) => {
+        cardapio.innerHTML += `<div class="item-card"><div><b>${p.nome}</b><br><span class="price">R$ ${p.preco.toFixed(2)}</span></div><button class="btn-add" onclick="prepararAdd(${i})">+</button></div>`;
+        listaP.innerHTML += `<div class="list-adm-item"><span>${p.nome}</span><button onclick="produtos.splice(${i},1);atualizar()">🗑️</button></div>`;
+    });
+
+    bairros.forEach((b, i) => {
+        listaB.innerHTML += `<div class="list-adm-item"><span>${b.nome}</span><button onclick="bairros.splice(${i},1);atualizar()">🗑️</button></div>`;
+        selectB.innerHTML += `<option value="${b.taxa}">${b.nome} (R$ ${b.taxa.toFixed(2)})</option>`;
+    });
+}
+
+function prepararAdd(i) {
+    itemAtual = produtos[i];
+    if(itemAtual.temAdc) document.getElementById('modal-adc').style.display = 'flex';
+    else { carrinho.push({nome: itemAtual.nome, preco: itemAtual.preco}); alert("Adicionado!"); }
+}
+
+function fecharModal() { document.getElementById('modal-adc').style.display = 'none'; }
+
+function confirmarAdicional() {
+    let adcs = []; let pExtra = 0;
+    document.querySelectorAll('#opcoes-adc input:checked').forEach(el => {
+        adcs.push(el.value); pExtra += parseFloat(el.dataset.preco);
+    });
+    carrinho.push({nome: itemAtual.nome + (adcs.length ? " + " + adcs.join(', ') : ""), preco: itemAtual.preco + pExtra});
+    fecharModal();
+}
+
+function enviarEImprimir() {
+    const nome = document.getElementById('cli-nome').value;
+    const end = document.getElementById('cli-end').value;
+    const taxa = parseFloat(document.getElementById('cli-bairro').value);
+    const bairro = document.getElementById('cli-bairro').options[document.getElementById('cli-bairro').selectedIndex].text;
+    const pgto = document.getElementById('cli-pgto').value;
+
+    if(!nome || !end || !carrinho.length) return alert("Dados incompletos!");
+
+    let subtotal = carrinho.reduce((a, b) => a + b.preco, 0);
+    let total = subtotal + taxa;
+    let itensTxt = carrinho.map(i => `- ${i.nome}`).join('\n');
+
+    let msg = `*PEDIDO: LÁ NA CALÇADA*\n\n*CLIENTE:* ${nome}\n\n*ENDEREÇO:* ${end}\n\n*PRODUTOS:*\n${itensTxt}\n\n*TAXA:* ${bairro}\n\n*TOTAL:* R$ ${total.toFixed(2)}\n\n*PAGAMENTO:* ${pgto}`;
+
+    // 1. Prepara a "Folha de Impressão"
+    const printArea = document.getElementById('print-content');
+    printArea.innerHTML = `
+        <div style="text-align:center"><b>LÁ NA CALÇADA</b><br>--------------------------</div>
+        <b>CLIENTE:</b> ${nome.toUpperCase()}<br>
+        <b>ENDEREÇO:</b> ${end}<br>
+        <b>BAIRRO:</b> ${bairro}<br>
+        --------------------------<br>
+        <b>PEDIDO:</b><br>${itensTxt.replace(/\n/g, '<br>')}<br>
+        --------------------------<br>
+        <b>TOTAL: R$ ${total.toFixed(2)}</b><br>
+        <b>PAGAMENTO:</b> ${pgto}<br><br>
+        <div style="text-align:center">Obrigado pela preferência!</div>
+    `;
+
+    // 2. Abre o WhatsApp
+    window.open(`https://wa.me/${WHATSAPP}?text=${encodeURIComponent(msg)}`, '_blank');
+
+    // 3. Dispara a Impressão após 1 segundo
+    setTimeout(() => {
+        window.print();
+    }, 1000);
+}
+
+render();
+</script>
+</body>
+</html>
